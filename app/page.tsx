@@ -1,5 +1,20 @@
+"use client";
+
+import { useState } from "react";
 export default function Home() {
-  return (
+   const [chargement, setChargement] = useState(false);
+
+  async function allerAuPaiement() {
+    setChargement(true);
+    const reponse = await fetch("/api/checkout", { method: "POST" });
+    const donnees = await reponse.json();
+    if (donnees.url) {
+      window.location.href = donnees.url;
+    } else {
+      alert("Une erreur est survenue, réessaie dans un instant.");
+      setChargement(false);
+    }
+  } return (
     <main className="min-h-screen">
       <section className="mx-auto max-w-2xl px-5 pb-12 pt-10">
         <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--corail)]">
@@ -16,7 +31,7 @@ export default function Home() {
           illimitées.
         </p>
         <a
-          href="#"
+          onClick={allerAuPaiement}
           className="mt-8 block w-full rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
         >
           Récupérer mes ventes perdues
@@ -68,7 +83,7 @@ export default function Home() {
             Relances illimitées.
           </h2>
           <a
-            href="#"
+            onClick={allerAuPaiement}
             className="mt-8 block w-full rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
           >
             Je démarre maintenant
