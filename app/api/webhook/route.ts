@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+import { supabase } from "../../../lib/supabase";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
@@ -19,7 +20,18 @@ export async function POST(request: Request) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    console.log("Paiement recu pour", session.customer_email);
+    console.log("Paiement reçu pour", session.customer_email);
+
+    const { error } = await supabase.from("clients").insert({
+      email: session.customer_email,
+      nom_boutique: "A completer",
+      plateforme: "A completer",
+      abonnement_actif: true,
+    });
+
+    if (error) {
+      console.error("Erreur insertion Supabase", error);
+    }
   }
 
   return NextResponse.json({ received: true });
