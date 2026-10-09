@@ -20,10 +20,10 @@ export async function POST(request: Request) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
-    console.log("Paiement reçu pour", session.customer_email);
+    console.log("Paiement reçu pour", session.customer_details.email);
 
     const { error } = await supabase.from("clients").insert({
-      email: session.customer_email,
+      email: session.customer_details.email,
       nom_boutique: "A completer",
       plateforme: "A completer",
       abonnement_actif: true,
