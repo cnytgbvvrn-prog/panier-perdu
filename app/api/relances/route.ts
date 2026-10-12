@@ -16,6 +16,29 @@ type Panier = {
   devise: string;
 };
 
+function construireEmail(montant: number, devise: string, lien: string) {
+  const texte = `Bonjour,
+
+Vous avez laissé un panier de ${montant} ${devise} sans finaliser votre commande.
+
+Il vous attend toujours : vous pouvez le retrouver ici et le terminer quand vous voulez.
+${lien}
+
+À très bientôt !`;
+
+  const html = `<div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #222; line-height: 1.5;">
+  <p>Bonjour,</p>
+  <p>Vous avez laissé un panier de <strong>${montant} ${devise}</strong> sans finaliser votre commande.</p>
+  <p>Il vous attend toujours : vous pouvez le retrouver et le terminer quand vous voulez.</p>
+  <p style="margin: 24px 0;">
+    <a href="${lien}" style="background: #111; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">Retrouver mon panier</a>
+  </p>
+  <p>À très bientôt !</p>
+</div>`;
+
+  return { texte, html };
+}
+
 export async function GET(request: Request) {
   if (!estAutorise(request)) {
     return NextResponse.json({ error: "Non autorise" }, { status: 401 });
@@ -34,16 +57,20 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  const lien = (process.env.WOOCOMMERCE_URL ?? "").trim().replace(/\/+$/, "");
   const paniers = (data ?? []) as Panier[];
   const erreurs: string[] = [];
   let envoyes = 0;
 
   for (const panier of paniers) {
+    const { texte, html } = construireEmail(panier.montant, panier.devise, lien);
+
     const { error: erreurEnvoi } = await resend.emails.send({
       from: "Panier Perdu <relance@alcevio.com>",
       to: DESTINATAIRE_TEST,
-      subject: "Vous avez oublie quelque chose dans votre panier",
-      text: `Bonjour,\n\nVous avez laisse un panier de ${panier.montant} ${panier.devise} sans finaliser votre commande.\n\nIl vous attend toujours : revenez le terminer quand vous voulez.\n\nA tres bientot !`,
+      subject: "Vous avez oublié quelque chose dans votre panier",
+      text: texte,
+      html: html,
     });
 
     if (erreurEnvoi) {
