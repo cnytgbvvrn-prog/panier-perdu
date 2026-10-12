@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 import { getCommandesEnAttente } from "../../../lib/woocommerce";
-
+import { estAutorise } from "../../../lib/auth";
 export const dynamic = "force-dynamic";
 
 type Commande = {
@@ -12,7 +12,10 @@ type Commande = {
   billing?: { email?: string };
 };
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!estAutorise(request)) {
+    return NextResponse.json({ error: "Non autorise" }, { status: 401 });
+  }
   // Pour le test : on rattache les paniers au client de test
   const { data: client } = await supabase
     .from("clients")

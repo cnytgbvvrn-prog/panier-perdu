@@ -13,6 +13,7 @@
     "next": "^15.5.27",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "resend": "^6.32.1",
     "stripe": "^23.0.0"
   },
   "devDependencies": {
