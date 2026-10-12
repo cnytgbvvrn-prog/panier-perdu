@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 import { resend } from "../../../lib/resend";
 import { estAutorise } from "../../../lib/auth";
+
 export const dynamic = "force-dynamic";
 
-const DESTINATAIRE_TEST = "cnytgbvvrn@privaterelay.appleid.com";
+// MODE TEST : tous les emails partent vers cette adresse. A supprimer avant le vrai lancement.
+const DESTINATAIRE_TEST = "nicolas.massias69@gmail.com";
 const DELAI_HEURES = 1;
 
 type Panier = {
@@ -18,6 +20,7 @@ export async function GET(request: Request) {
   if (!estAutorise(request)) {
     return NextResponse.json({ error: "Non autorise" }, { status: 401 });
   }
+
   const limite = new Date(Date.now() - DELAI_HEURES * 3600 * 1000).toISOString();
 
   const { data, error } = await supabase
@@ -37,7 +40,7 @@ export async function GET(request: Request) {
 
   for (const panier of paniers) {
     const { error: erreurEnvoi } = await resend.emails.send({
-      from: "Panier Perdu <onboarding@resend.dev>",
+      from: "Panier Perdu <relance@alcevio.com>",
       to: DESTINATAIRE_TEST,
       subject: "Vous avez oublie quelque chose dans votre panier",
       text: `Bonjour,\n\nVous avez laisse un panier de ${panier.montant} ${panier.devise} sans finaliser votre commande.\n\nIl vous attend toujours : revenez le terminer quand vous voulez.\n\nA tres bientot !`,
