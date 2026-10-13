@@ -3,6 +3,12 @@ import Stripe from "stripe";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
+const SITE_URL = (
+  process.env.NEXT_PUBLIC_SITE_URL ?? "https://panier-perdu-plum.vercel.app"
+)
+  .trim()
+  .replace(/\/+$/, "");
+
 export async function POST() {
   try {
     const session = await stripe.checkout.sessions.create({
@@ -18,8 +24,8 @@ export async function POST() {
           quantity: 1,
         },
       ],
-      success_url: "http://localhost:3000/succes",
-      cancel_url: "http://localhost:3000/",
+      success_url: `${SITE_URL}/succes`,
+      cancel_url: `${SITE_URL}/`,
     });
 
     return NextResponse.json({ url: session.url });
