@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { getCommandesEnAttente } from "@/lib/woocommerce";
+import {
+  getCommandesEnAttente,
+  getStatutCommande,
+} from "@/lib/woocommerce";
 import { dechiffrer } from "@/lib/chiffrement";
 import { estAutorise } from "@/lib/auth";
 
@@ -16,8 +19,15 @@ type ClientBoutique = {
 type ResultatClient = {
   client: string;
   paniers?: number;
+  recuperes?: number;
   erreur?: string;
 };
+
+// Statuts WooCommerce qui veulent dire : la commande a ete payee
+const STATUTS_PAYES = ["processing", "completed"];
+
+// Nombre maximum de paniers verifies par client et par passage
+const MAX_VERIFICATIONS = 50;
 
 export async function GET(request: Request) {
   if (!estAutorise(request)) {
@@ -40,12 +50,19 @@ export async function GET(request: Request) {
   const clients = (data ?? []) as ClientBoutique[];
   const resultats: ResultatClient[] = [];
   let total = 0;
+  let totalRecuperes = 0;
 
   // Chaque client est traite separement : une boutique en panne ne bloque pas les autres
   for (const client of clients) {
+    const entree: ResultatClient = { client: client.id };
+    let cle = "";
+    let secret = "";
+    let boutiqueOk = false;
+
+    // Partie 1 : enregistrer les commandes en attente
     try {
-      const cle = dechiffrer(client.woo_cle_chiffree);
-      const secret = dechiffrer(client.woo_secret_chiffre);
+      cle = dechiffrer(client.woo_cle_chiffree);
+      secret = dechiffrer(client.woo_secret_chiffre);
       const commandes = await getCommandesEnAttente(client.woo_url, cle, secret);
 
       const lignes = commandes.map((c) => ({
@@ -71,19 +88,72 @@ export async function GET(request: Request) {
       }
 
       total += lignes.length;
-      resultats.push({ client: client.id, paniers: lignes.length });
+      entree.paniers = lignes.length;
+      boutiqueOk = true;
     } catch (e) {
-      resultats.push({
-        client: client.id,
-        erreur: e instanceof Error ? e.message : "erreur inconnue",
-      });
+      entree.erreur = e instanceof Error ? e.message : "erreur inconnue";
     }
+
+    // Partie 2 : reperer les paniers relances puis payes (ventes recuperees)
+    if (boutiqueOk) {
+      try {
+        const { data: aVerifier, error: erreurLecture } = await supabase
+          .from("paniers_abandonnes")
+          .select("id, commande_woo_id")
+          .eq("client_id", client.id)
+          .eq("relance_envoyee", true)
+          .eq("recupere", false)
+          .limit(MAX_VERIFICATIONS);
+
+        if (erreurLecture) {
+          throw new Error("Lecture : " + erreurLecture.message);
+        }
+
+        let recuperes = 0;
+
+        for (const panier of aVerifier ?? []) {
+          const statut = await getStatutCommande(
+            client.woo_url,
+            cle,
+            secret,
+            String(panier.commande_woo_id)
+          );
+
+          if (statut && STATUTS_PAYES.includes(statut)) {
+            // Condition recupere=false : un panier ne peut etre compte qu'une seule fois
+            const { data: modifies, error: erreurMaj } = await supabase
+              .from("paniers_abandonnes")
+              .update({ recupere: true })
+              .eq("id", panier.id)
+              .eq("recupere", false)
+              .select("id");
+
+            if (erreurMaj) {
+              throw new Error("Mise a jour : " + erreurMaj.message);
+            }
+
+            if (modifies && modifies.length > 0) {
+              recuperes++;
+            }
+          }
+        }
+
+        totalRecuperes += recuperes;
+        entree.recuperes = recuperes;
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "erreur inconnue";
+        entree.erreur = "Recuperation : " + message;
+      }
+    }
+
+    resultats.push(entree);
   }
 
   return NextResponse.json({
     message: "synchro ok",
     clients: clients.length,
     paniers: total,
+    recuperes: totalRecuperes,
     resultats,
   });
 }
