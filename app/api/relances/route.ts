@@ -9,11 +9,17 @@ export const dynamic = "force-dynamic";
 const DESTINATAIRE_TEST = "nicolas.massias69@gmail.com";
 const DELAI_HEURES = 1;
 
+type ClientLie = {
+  woo_url: string | null;
+  abonnement_actif: boolean | null;
+};
+
 type Panier = {
   id: string;
   email_acheteur: string | null;
   montant: number;
   devise: string;
+  clients: ClientLie | ClientLie[] | null;
 };
 
 function construireEmail(montant: number, devise: string, lien: string) {
@@ -48,7 +54,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from("paniers_abandonnes")
-    .select("id, email_acheteur, montant, devise")
+    .select("id, email_acheteur, montant, devise, clients(woo_url, abonnement_actif)")
     .eq("relance_envoyee", false)
     .eq("recupere", false)
     .lt("date_abandon", limite);
@@ -57,12 +63,23 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const lien = (process.env.WOOCOMMERCE_URL ?? "").trim().replace(/\/+$/, "");
-  const paniers = (data ?? []) as Panier[];
+  const paniers = (data ?? []) as unknown as Panier[];
   const erreurs: string[] = [];
   let envoyes = 0;
+  let ignores = 0;
 
   for (const panier of paniers) {
+    const client = Array.isArray(panier.clients)
+      ? panier.clients[0]
+      : panier.clients;
+
+    // On ne relance que les clients actifs qui ont connecte une boutique
+    if (!client || client.abonnement_actif !== true || !client.woo_url) {
+      ignores++;
+      continue;
+    }
+
+    const lien = client.woo_url.trim().replace(/\/+$/, "");
     const { texte, html } = construireEmail(panier.montant, panier.devise, lien);
 
     const { error: erreurEnvoi } = await resend.emails.send({
@@ -85,5 +102,5 @@ export async function GET(request: Request) {
     envoyes++;
   }
 
-  return NextResponse.json({ message: "relances ok", envoyes, erreurs });
+  return NextResponse.json({ message: "relances ok", envoyes, ignores, erreurs });
 }
