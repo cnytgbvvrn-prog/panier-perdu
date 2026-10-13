@@ -13,6 +13,7 @@ export async function POST() {
   try {
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",
+      locale: "fr",
       line_items: [
         {
           price_data: {
@@ -24,6 +25,15 @@ export async function POST() {
           quantity: 1,
         },
       ],
+      subscription_data: {
+        trial_period_days: 7,
+      },
+      custom_text: {
+        submit: {
+          message:
+            "7 jours gratuits, puis 29 € par mois. Aucun prélèvement pendant l'essai. Résiliable à tout moment avant la fin de l'essai.",
+        },
+      },
       success_url: `${SITE_URL}/succes`,
       cancel_url: `${SITE_URL}/`,
     });
