@@ -1,20 +1,39 @@
 "use client";
 
 import { useState } from "react";
+
+const MESSAGE_ERREUR = "Une erreur est survenue, réessaie dans un instant.";
+
 export default function Home() {
-   const [chargement, setChargement] = useState(false);
+  const [chargement, setChargement] = useState(false);
 
   async function allerAuPaiement() {
+    if (chargement) return;
     setChargement(true);
-    const reponse = await fetch("/api/checkout", { method: "POST" });
-    const donnees = await reponse.json();
-    if (donnees.url) {
-      window.location.href = donnees.url;
-    } else {
-      alert("Une erreur est survenue, réessaie dans un instant.");
+    try {
+      const reponse = await fetch("/api/checkout", { method: "POST" });
+
+      // Pas connecte : on l'envoie d'abord se connecter
+      if (reponse.status === 401) {
+        window.location.href = "/connexion";
+        return;
+      }
+
+      const donnees = await reponse.json();
+      if (donnees.url) {
+        window.location.href = donnees.url;
+        return;
+      }
+
+      alert(MESSAGE_ERREUR);
+      setChargement(false);
+    } catch {
+      alert(MESSAGE_ERREUR);
       setChargement(false);
     }
-  } return (
+  }
+
+  return (
     <main className="min-h-screen">
       <section className="mx-auto max-w-2xl px-5 pb-12 pt-10">
         <p className="mb-4 text-sm font-semibold uppercase tracking-wide text-[var(--corail)]">
@@ -32,7 +51,7 @@ export default function Home() {
         </p>
         <a
           onClick={allerAuPaiement}
-          className="mt-8 block w-full rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
+          className="mt-8 block w-full cursor-pointer rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
         >
           Récupérer mes ventes perdues
         </a>
@@ -84,7 +103,7 @@ export default function Home() {
           </h2>
           <a
             onClick={allerAuPaiement}
-            className="mt-8 block w-full rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
+            className="mt-8 block w-full cursor-pointer rounded-lg bg-[var(--corail)] px-6 py-4 text-center text-lg font-semibold text-[var(--bleu-nuit)] hover:bg-[var(--corail-sombre)]"
           >
             Je démarre maintenant
           </a>
