@@ -1,29 +1,58 @@
 import { redirect } from "next/navigation";
 import { creerClientServeur } from "@/lib/supabase-serveur";
+import BoutonEssai from "./BoutonEssai";
 
 export const dynamic = "force-dynamic";
 
-export default async function Compte() {
+async function deconnexion() {
+  "use server";
   const supabase = await creerClientServeur();
-  const { data } = await supabase.auth.getUser();
+  await supabase.auth.signOut();
+  redirect("/connexion");
+}
 
-  if (!data.user) {
-    redirect("/connexion");
-  }
+export default async function PageCompte() {
+  const supabase = await creerClientServeur();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-  async function deconnexion() {
-    "use server";
-    const s = await creerClientServeur();
-    await s.auth.signOut();
+  if (!user) {
     redirect("/connexion");
   }
 
   return (
-    <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", backgroundColor: "#0B1730", color: "white", textAlign: "center", padding: "2rem" }}>
-      <h1 style={{ fontSize: "2.5rem", marginBottom: "1rem" }}>Mon compte</h1>
-      <p style={{ fontSize: "1.1rem", marginBottom: "2rem" }}>Connecté avec : {data.user.email}</p>
+    <main
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#0B1730",
+        color: "#FFFFFF",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "24px",
+        padding: "24px",
+        textAlign: "center",
+      }}
+    >
+      <h1 style={{ fontSize: "28px", fontWeight: 700 }}>Mon compte</h1>
+      <p>Connecté avec : {user.email}</p>
+
+      <BoutonEssai />
+
       <form action={deconnexion}>
-        <button type="submit" style={{ padding: "0.8rem 1.4rem", borderRadius: "8px", border: "1px solid white", background: "transparent", color: "white", cursor: "pointer" }}>
+        <button
+          type="submit"
+          style={{
+            background: "transparent",
+            color: "#FFFFFF",
+            border: "1px solid #FFFFFF",
+            padding: "10px 20px",
+            borderRadius: "8px",
+            cursor: "pointer",
+          }}
+        >
           Se déconnecter
         </button>
       </form>
