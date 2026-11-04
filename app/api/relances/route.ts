@@ -4,6 +4,10 @@ import { resend } from "../../../lib/resend";
 import { estAutorise } from "../../../lib/auth";
 import { getStatutCommande } from "../../../lib/woocommerce";
 import { dechiffrer } from "../../../lib/chiffrement";
+import {
+  construireLienDesinscription,
+  normaliserEmail,
+} from "../../../lib/desinscription";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +24,7 @@ type ClientLie = {
 
 type Panier = {
   id: string;
+  client_id: string;
   commande_woo_id: string;
   email_acheteur: string | null;
   montant: number;
@@ -27,7 +32,12 @@ type Panier = {
   clients: ClientLie | ClientLie[] | null;
 };
 
-function construireEmail(montant: number, devise: string, lien: string) {
+function construireEmail(
+  montant: number,
+  devise: string,
+  lien: string,
+  lienDesinscription: string
+) {
   const texte = `Bonjour,
 
 Vous avez laissé un panier de ${montant} ${devise} sans finaliser votre commande.
@@ -35,7 +45,11 @@ Vous avez laissé un panier de ${montant} ${devise} sans finaliser votre command
 Il vous attend toujours : vous pouvez le retrouver ici et le terminer quand vous voulez.
 ${lien}
 
-À très bientôt !`;
+À très bientôt !
+
+Pour ne plus recevoir ces rappels : ${lienDesinscription}`;
+
+  const lienDesinscriptionHtml = lienDesinscription.replace(/&/g, "&amp;");
 
   const html = `<div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #222; line-height: 1.5;">
   <p>Bonjour,</p>
@@ -45,6 +59,7 @@ ${lien}
     <a href="${lien}" style="background: #111; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 8px; display: inline-block;">Retrouver mon panier</a>
   </p>
   <p>À très bientôt !</p>
+  <p style="font-size: 12px; color: #888; margin-top: 32px;">Vous ne souhaitez plus recevoir ces rappels ? <a href="${lienDesinscriptionHtml}" style="color: #888;">Se désinscrire</a></p>
 </div>`;
 
   return { texte, html };
@@ -60,7 +75,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("paniers_abandonnes")
     .select(
-      "id, commande_woo_id, email_acheteur, montant, devise, clients(woo_url, abonnement_actif, woo_cle_chiffree, woo_secret_chiffre)"
+      "id, client_id, commande_woo_id, email_acheteur, montant, devise, clients(woo_url, abonnement_actif, woo_cle_chiffree, woo_secret_chiffre)"
     )
     .eq("relance_envoyee", false)
     .eq("recupere", false)
@@ -92,6 +107,30 @@ export async function GET(request: Request) {
       continue;
     }
 
+    // Sans adresse d'acheteur, impossible de relancer ni de proposer la desinscription
+    if (!panier.email_acheteur) {
+      ignores++;
+      continue;
+    }
+    const emailAcheteur = normaliserEmail(panier.email_acheteur);
+
+    // Acheteur desinscrit : aucune relance
+    const { data: desinscrits, error: erreurDesinscription } = await supabase
+      .from("desinscriptions")
+      .select("id")
+      .eq("client_id", panier.client_id)
+      .eq("email", emailAcheteur)
+      .limit(1);
+
+    if (erreurDesinscription) {
+      erreurs.push("Desinscription : " + erreurDesinscription.message);
+      continue;
+    }
+    if (desinscrits && desinscrits.length > 0) {
+      ignores++;
+      continue;
+    }
+
     // Verification juste avant l'envoi : la commande doit etre TOUJOURS en attente.
     // Payee, annulee ou supprimee : on n'envoie rien.
     try {
@@ -117,7 +156,26 @@ export async function GET(request: Request) {
     }
 
     const lien = client.woo_url.trim().replace(/\/+$/, "");
-    const { texte, html } = construireEmail(panier.montant, panier.devise, lien);
+
+    let lienDesinscription = "";
+    try {
+      lienDesinscription = construireLienDesinscription(
+        panier.client_id,
+        emailAcheteur
+      );
+    } catch (e) {
+      erreurs.push(
+        "Lien : " + (e instanceof Error ? e.message : "erreur inconnue")
+      );
+      continue;
+    }
+
+    const { texte, html } = construireEmail(
+      panier.montant,
+      panier.devise,
+      lien,
+      lienDesinscription
+    );
 
     const { error: erreurEnvoi } = await resend.emails.send({
       from: "Panier Perdu <relance@alcevio.com>",
@@ -125,6 +183,7 @@ export async function GET(request: Request) {
       subject: "Vous avez oublié quelque chose dans votre panier",
       text: texte,
       html: html,
+      headers: { "List-Unsubscribe": `<${lienDesinscription}>` },
     });
 
     if (erreurEnvoi) {
