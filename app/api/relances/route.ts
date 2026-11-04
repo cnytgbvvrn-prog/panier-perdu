@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { supabase } from "../../../lib/supabase";
 import { resend } from "../../../lib/resend";
 import { estAutorise } from "../../../lib/auth";
+import { getStatutCommande } from "../../../lib/woocommerce";
+import { dechiffrer } from "../../../lib/chiffrement";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +14,13 @@ const DELAI_HEURES = 1;
 type ClientLie = {
   woo_url: string | null;
   abonnement_actif: boolean | null;
+  woo_cle_chiffree: string | null;
+  woo_secret_chiffre: string | null;
 };
 
 type Panier = {
   id: string;
+  commande_woo_id: string;
   email_acheteur: string | null;
   montant: number;
   devise: string;
@@ -37,7 +42,7 @@ ${lien}
   <p>Vous avez laissé un panier de <strong>${montant} ${devise}</strong> sans finaliser votre commande.</p>
   <p>Il vous attend toujours : vous pouvez le retrouver et le terminer quand vous voulez.</p>
   <p style="margin: 24px 0;">
-    <a href="${lien}" style="background: #111; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 6px; display: inline-block;">Retrouver mon panier</a>
+    <a href="${lien}" style="background: #111; color: #fff; padding: 12px 20px; text-decoration: none; border-radius: 8px; display: inline-block;">Retrouver mon panier</a>
   </p>
   <p>À très bientôt !</p>
 </div>`;
@@ -54,7 +59,9 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from("paniers_abandonnes")
-    .select("id, email_acheteur, montant, devise, clients(woo_url, abonnement_actif)")
+    .select(
+      "id, commande_woo_id, email_acheteur, montant, devise, clients(woo_url, abonnement_actif, woo_cle_chiffree, woo_secret_chiffre)"
+    )
     .eq("relance_envoyee", false)
     .eq("recupere", false)
     .lt("date_abandon", limite);
@@ -74,8 +81,38 @@ export async function GET(request: Request) {
       : panier.clients;
 
     // On ne relance que les clients actifs qui ont connecte une boutique
-    if (!client || client.abonnement_actif !== true || !client.woo_url) {
+    if (
+      !client ||
+      client.abonnement_actif !== true ||
+      !client.woo_url ||
+      !client.woo_cle_chiffree ||
+      !client.woo_secret_chiffre
+    ) {
       ignores++;
+      continue;
+    }
+
+    // Verification juste avant l'envoi : la commande doit etre TOUJOURS en attente.
+    // Payee, annulee ou supprimee : on n'envoie rien.
+    try {
+      const cle = dechiffrer(client.woo_cle_chiffree);
+      const secret = dechiffrer(client.woo_secret_chiffre);
+      const statut = await getStatutCommande(
+        client.woo_url,
+        cle,
+        secret,
+        String(panier.commande_woo_id)
+      );
+
+      if (statut !== "pending") {
+        ignores++;
+        continue;
+      }
+    } catch (e) {
+      // En cas de doute (boutique injoignable...), on n'envoie pas : ce sera retente au prochain passage
+      erreurs.push(
+        "Verification : " + (e instanceof Error ? e.message : "erreur inconnue")
+      );
       continue;
     }
 
